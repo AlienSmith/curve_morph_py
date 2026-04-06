@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Form  # Add Form to your imports
 import os
 import json
@@ -117,6 +118,14 @@ async def generate_morph(
     background_tasks.add_task(os.remove, gif_path)
     return FileResponse(gif_path, media_type="image/gif")
 
+app.add_middleware(
+    CORSMiddleware,
+    # Allows all domains (including 5173, 5174, etc.)
+    allow_origins=["*"],
+    allow_credentials=True,          # Keep this True for session/cookie support
+    allow_methods=["*"],             # Allows GET, POST, OPTIONS, etc.
+    allow_headers=["*"],             # Allows all custom headers
+)
 # Mount static files for the Editor and Previewer
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
