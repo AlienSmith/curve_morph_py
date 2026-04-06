@@ -1,3 +1,4 @@
+from fastapi import Form  # Add Form to your imports
 import os
 import json
 import uuid
@@ -69,56 +70,51 @@ def process_shape_data(content, target_segments=64):
 async def generate_morph(
     background_tasks: BackgroundTasks,
     fileA: UploadFile = File(...),
-    fileB: UploadFile = File(...)
+    fileB: UploadFile = File(...),
+    dpi: int = Form(100)  # Receive DPI as a form parameter
 ):
     job_id = str(uuid.uuid4())
     gif_path = os.path.join(TEMP_DIR, f"{job_id}.gif")
 
     try:
-        # Load JSONs directly from memory
         json_a = json.loads(await fileA.read())
         json_b = json.loads(await fileB.read())
-
-        # Process through the shared helper
         ptsA = process_shape_data(json_a, TARGET_SEGMENTS)
         ptsB = process_shape_data(json_b, TARGET_SEGMENTS)
-
         morpher = FourierShapeMorpher(ptsA, ptsB)
     except Exception as e:
         return {"error": f"Processing failed: {str(e)}"}
 
-    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+    # Dynamic scaling: thicker lines for higher DPI
+    line_weight = 2 * (dpi / 100)
+    marker_size = 3 * (dpi / 100)
 
-    # Tighten the viewport so the shape fills more space
-    ax.set_xlim(-1.2, 1.2)
-    ax.set_ylim(-1.2, 1.2)
+    # Render with the requested DPI
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=dpi)
+    ax.set_xlim(-1.3, 1.3)
+    ax.set_ylim(-1.3, 1.3)
     ax.axis('off')
     ax.set_aspect('equal')
 
-    # Increase line width (lw) and marker size (ms) for the higher resolution
-    curve, = ax.plot([], [], 'b-', lw=3)
-    dots, = ax.plot([], [], 'ro', ms=4)
+    curve, = ax.plot([], [], 'b-', lw=line_weight)
+    dots, = ax.plot([], [], 'ro', ms=marker_size)
 
     def update(f):
         t = f / 40.0
         t_ease = t**2 * (3 - 2*t)
         pts = morpher.evaluate(t_ease)
-
         poly = bezier_line(pts)
         curve.set_data(poly[:, 0], poly[:, 1])
         dots.set_data(pts[:, 0], pts[:, 1])
-
         return curve, dots
 
-    # Generate the GIF
     anim = FuncAnimation(fig, update, frames=41, blit=True)
-    # Using 'pillow' writer; note that higher DPI makes generation slower
+
+    # Using 'optimize=True' can help with file size but takes a bit more CPU
     anim.save(gif_path, writer='pillow', fps=20)
     plt.close(fig)
 
-    # Cleanup GIF after transfer
     background_tasks.add_task(os.remove, gif_path)
-
     return FileResponse(gif_path, media_type="image/gif")
 
 # Mount static files for the Editor and Previewer

@@ -172,6 +172,19 @@
             <input type="file" id="fileB" accept=".json">
         </div>
 
+        <div class="input-group">
+            <label>Render Quality (DPI)</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="range" id="dpiRange" min="72" max="200" value="100" step="10"
+                    oninput="document.getElementById('dpiVal').innerText = this.value">
+                <span id="dpiVal" style="font-size: 12px; min-width: 30px;">100</span>
+            </div>
+            <div style="font-size: 10px; color: #666; margin-top: 5px;">
+                Lower = Faster | Higher = Crisp
+            </div>
+        </div>
+
+
         <button id="genBtn" onclick="generate()">Generate Morph</button>
         <div id="statusText">Ready</div>
 
@@ -206,9 +219,11 @@
             btn.disabled = true;
             status.innerText = "⚡ FFT Processing...";
 
+            const dpi = document.getElementById('dpiRange').value;
             const fd = new FormData();
             fd.append('fileA', fA);
             fd.append('fileB', fB);
+            fd.append('dpi', dpi);
 
             try {
                 const resp = await fetch('/api/generate-morph', { method: 'POST', body: fd });
