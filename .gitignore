@@ -231,3 +231,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+/temp_renders/*
+/shape-studio/public/*
+*.gif
