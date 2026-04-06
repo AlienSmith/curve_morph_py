@@ -12,7 +12,11 @@
         H = 800;
     let resizeObserver;
 
-    $: ({ pts, showHighRes, selectedIdx } = $shapeState);
+    $: ({ pts, showHighRes, selectedIdx, reference } = $shapeState);
+    $: refPts = reference?.points || null;
+    $: showRef = reference?.visible || false;
+
+    // ✅ TRIGGER: Redraw when pts OR reference changes
     $: if (pts && ctx) draw();
 
     onMount(() => {
@@ -21,7 +25,6 @@
         resizeCanvas();
         draw();
 
-        // Auto-resize to parent container
         resizeObserver = new ResizeObserver(() => {
             resizeCanvas();
             draw();
@@ -29,15 +32,12 @@
         resizeObserver.observe(canvas.parentElement);
     });
 
-    onDestroy(() => {
-        resizeObserver?.disconnect();
-    });
+    onDestroy(() => resizeObserver?.disconnect());
 
     function resizeCanvas() {
         const rect = canvas.getBoundingClientRect();
         W = rect.width;
         H = rect.height;
-        // Setting width/height clears context but keeps the reference valid
         canvas.width = W;
         canvas.height = H;
     }
@@ -47,7 +47,7 @@
         ctx.clearRect(0, 0, W, H);
         ctx.save();
 
-        // Grid
+        // 1. Grid
         ctx.strokeStyle = "#222";
         ctx.lineWidth = 1;
         for (let i = -W / 2; i < W / 2; i += SCALE / 2) {
@@ -61,7 +61,30 @@
             ctx.stroke();
         }
 
-        // Main Curve
+        // ✅ Reference Layer (Static, Non-Interactive)
+        if (showRef && refPts && refPts.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            const s0 = toScreen(refPts[0], W, H, SCALE);
+            ctx.moveTo(s0.x, s0.y);
+            for (let i = 1; i < refPts.length; i++) {
+                const s = toScreen(refPts[i], W, H, SCALE);
+                ctx.lineTo(s.x, s.y);
+            }
+            // Auto-close loop if start/end match (common in exported shapes)
+            const first = toScreen(refPts[0], W, H, SCALE);
+            const last = toScreen(refPts[refPts.length - 1], W, H, SCALE);
+            if (Math.hypot(first.x - last.x, first.y - last.y) < 2)
+                ctx.closePath();
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
+        // 3. Main Curve
         ctx.strokeStyle = "#4ade80";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -74,7 +97,7 @@
         }
         ctx.stroke();
 
-        // High-Res
+        // 4. High-Res
         if (showHighRes) {
             const res = evaluateHighRes(pts, 128);
             ctx.save();
@@ -100,7 +123,7 @@
             ctx.restore();
         }
 
-        // Control Lines
+        // 5. Control Lines
         ctx.strokeStyle = "#666";
         ctx.setLineDash([5, 4]);
         ctx.lineWidth = 1;
@@ -119,7 +142,7 @@
         }
         ctx.setLineDash([]);
 
-        // Points
+        // 6. Points
         pts.forEach((p, i) => {
             const s = toScreen(p, W, H, SCALE);
             const sel = i === selectedIdx;
@@ -145,7 +168,6 @@
         dragIdx = -1;
         for (let i = 0; i < pts.length; i++) {
             const s = toScreen(pts[i], W, H, SCALE);
-            // Increased hit radius for better UX
             if (Math.hypot(x - s.x, y - s.y) < 16) {
                 dragIdx = i;
                 break;
@@ -159,7 +181,6 @@
         if (dragIdx === -1) return;
         const { x, y } = getCanvasCoords(e);
         const w = toWorld(x, y, W, H, SCALE);
-        // Direct mutation for 60fps smoothness
         pts[dragIdx].x = w.x;
         pts[dragIdx].y = w.y;
         draw();
@@ -173,7 +194,6 @@
     }
 </script>
 
-<!-- touch-action: none prevents browser from hijacking pointer events for scrolling -->
 <canvas
     bind:this={canvas}
     class="w-100 h-100 d-block"

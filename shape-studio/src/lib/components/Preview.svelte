@@ -1,7 +1,7 @@
 <script>
     import { Row, Col, Button, Input, Label } from "sveltestrap";
     import { Zap, Download, FileCode } from "lucide-svelte";
-    import { morphResult, status, renderDpi } from "../store.js";
+    import { morphResult, status, renderDpi } from "../stores/previewStore.js";
 
     let fileA, fileB;
 

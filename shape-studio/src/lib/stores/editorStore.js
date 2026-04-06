@@ -6,6 +6,7 @@ const init = {
     history: [], historyIdx: -1,
     selectedIdx: -1,
     showHighRes: false, normalizeExport: true,
+    reference: { points: null, visible: false }, // ✅ Hidden by default
     toast: { msg: '', type: 'success', visible: false }
 };
 
@@ -26,23 +27,13 @@ export const actions = {
     setPts(newPts) { save(); store.update(s => ({ ...s, pts: newPts, selectedIdx: -1 })); },
     loadPreset(type) { actions.setPts(generatePreset(type)); },
 
-    // High-frequency drag updates (no history save)
     updatePointLocal(idx, x, y) {
-        store.update(s => ({
-            ...s,
-            pts: s.pts.map((p, i) => i === idx ? { ...p, x, y } : p)
-        }));
+        store.update(s => ({ ...s, pts: s.pts.map((p, i) => i === idx ? { ...p, x, y } : p) }));
     },
-
-    // Commit to history (call on pointer up)
     commitDrag(idx, x, y) {
-        store.update(s => ({
-            ...s,
-            pts: s.pts.map((p, i) => i === idx ? { ...p, x, y } : p)
-        }));
+        store.update(s => ({ ...s, pts: s.pts.map((p, i) => i === idx ? { ...p, x, y } : p) }));
         save();
     },
-
     updatePoint(idx, axis, val) {
         const n = parseFloat(val); if (isNaN(n)) return;
         store.update(s => ({ ...s, pts: s.pts.map((p, i) => i === idx ? { ...p, [axis]: n } : p) }));
@@ -51,20 +42,48 @@ export const actions = {
     undo() {
         store.update(s => {
             if (s.historyIdx <= 0) return s;
-            const idx = s.historyIdx - 1;
-            return { ...s, pts: s.history[idx].map(p => ({ ...p })), historyIdx: idx };
+            return { ...s, pts: s.history[s.historyIdx - 1].map(p => ({ ...p })), historyIdx: s.historyIdx - 1 };
         });
     },
     redo() {
         store.update(s => {
             if (s.historyIdx >= s.history.length - 1) return s;
-            const idx = s.historyIdx + 1;
-            return { ...s, pts: s.history[idx].map(p => ({ ...p })), historyIdx: idx };
+            return { ...s, pts: s.history[s.historyIdx + 1].map(p => ({ ...p })), historyIdx: s.historyIdx + 1 };
         });
     },
     selectPoint(idx) { store.update(s => ({ ...s, selectedIdx: idx })); },
     toggleHighRes() { store.update(s => ({ ...s, showHighRes: !s.showHighRes })); },
     toggleNormalize() { store.update(s => ({ ...s, normalizeExport: !s.normalizeExport })); },
+
+    loadReference(file) {
+        if (!file) return;
+        const r = new FileReader();
+        r.onload = e => {
+            try {
+                const json = JSON.parse(e.target.result);
+                // Explicitly handle your exported format: { meta: {...}, points: [[x,y], ...] }
+                const raw = json.points || json;
+                if (!Array.isArray(raw) || raw.length < 2) throw new Error("Invalid or empty points array");
+
+                const cleaned = raw.map(p => {
+                    if (Array.isArray(p) && p.length >= 2) return { x: p[0], y: p[1] };
+                    if (p && typeof p === 'object') return { x: p.x || 0, y: p.y || 0 };
+                    return { x: 0, y: 0 };
+                });
+
+                store.update(s => ({ ...s, reference: { points: cleaned, visible: true } }));
+                actions.fireToast(`📐 Reference loaded (${cleaned.length} pts)`);
+            } catch (err) { actions.fireToast("❌ Ref import failed: " + err.message, "error"); }
+        };
+        r.readAsText(file);
+    },
+    toggleReference() {
+        store.update(s => ({ ...s, reference: { ...s.reference, visible: !s.reference.visible } }));
+    },
+    clearReference() {
+        store.update(s => ({ ...s, reference: { points: null, visible: false } }));
+        actions.fireToast("🗑️ Reference cleared");
+    },
     fireToast(msg, type = 'success') {
         store.update(s => ({ ...s, toast: { msg, type, visible: true } }));
         setTimeout(() => store.update(s => ({ ...s, toast: { ...s.toast, visible: false } })), 2500);
