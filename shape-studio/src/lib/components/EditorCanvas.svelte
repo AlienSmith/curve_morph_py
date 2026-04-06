@@ -61,24 +61,28 @@
             ctx.stroke();
         }
 
-        // ✅ Reference Layer (Static, Non-Interactive)
-        if (showRef && refPts && refPts.length > 1) {
+        // ✅ Reference Layer (Now using Quadratic Curves)
+        if (showRef && refPts && refPts.length === 32) {
             ctx.save();
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.strokeStyle = "rgba(255, 255, 255, 1.0)";
             ctx.lineWidth = 1.5;
             ctx.setLineDash([6, 4]);
             ctx.beginPath();
+
+            // Start at the first anchor
             const s0 = toScreen(refPts[0], W, H, SCALE);
             ctx.moveTo(s0.x, s0.y);
-            for (let i = 1; i < refPts.length; i++) {
-                const s = toScreen(refPts[i], W, H, SCALE);
-                ctx.lineTo(s.x, s.y);
+
+            // Loop through the 16 segments
+            for (let i = 0; i < 16; i++) {
+                // Control point is the odd index (1, 3, 5...)
+                const c = toScreen(refPts[2 * i + 1], W, H, SCALE);
+                // Next anchor is the even index (2, 4, 6...), wrapping at 32
+                const e = toScreen(refPts[(2 * i + 2) % 32], W, H, SCALE);
+
+                ctx.quadraticCurveTo(c.x, c.y, e.x, e.y);
             }
-            // Auto-close loop if start/end match (common in exported shapes)
-            const first = toScreen(refPts[0], W, H, SCALE);
-            const last = toScreen(refPts[refPts.length - 1], W, H, SCALE);
-            if (Math.hypot(first.x - last.x, first.y - last.y) < 2)
-                ctx.closePath();
+
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.restore();
@@ -114,7 +118,7 @@
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.fillStyle = "rgba(251,191,36,0.7)";
-            for (let i = 0; i < res.length; i += 4) {
+            for (let i = 0; i < res.length; i += 1) {
                 const r = toScreen(res[i], W, H, SCALE);
                 ctx.beginPath();
                 ctx.arc(r.x, r.y, 2.5, 0, Math.PI * 2);

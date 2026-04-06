@@ -91,7 +91,13 @@
             type="file"
             accept=".json"
             class="d-none"
-            on:change={(e) => actions.loadReference(e.target.files[0])}
+            on:change={(e) => {
+                if (e.target.files[0]) {
+                    actions.loadReference(e.target.files[0]);
+                }
+                // Reset the value so the same file can be loaded again
+                e.target.value = "";
+            }}
         />
     </label>
 
@@ -139,7 +145,13 @@
                 type="file"
                 accept=".json"
                 class="d-none"
-                on:change={(e) => actions.handleImport(e.target.files[0])}
+                on:change={(e) => {
+                    if (e.target.files[0]) {
+                        actions.handleImport(e.target.files[0]);
+                    }
+                    // Reset the value so the same file can be loaded again
+                    e.target.value = "";
+                }}
             />
         </label>
         <button

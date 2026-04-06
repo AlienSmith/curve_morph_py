@@ -5,7 +5,7 @@ const init = {
     pts: generatePreset('circle'),
     history: [], historyIdx: -1,
     selectedIdx: -1,
-    showHighRes: false, normalizeExport: true,
+    showHighRes: false, normalizeExport: false,
     reference: { points: null, visible: false }, // ✅ Hidden by default
     toast: { msg: '', type: 'success', visible: false }
 };

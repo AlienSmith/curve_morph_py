@@ -57,27 +57,53 @@ export function evaluateHighRes(pts, totalPoints = 128) {
 }
 
 export function generatePreset(type) {
-    return Array(32).fill(null).map((_, i) => {
-        const angle = (i * Math.PI) / 16;
+    // 16 segments means 32 points total (anchor, control, anchor...)
+    const numSegments = 16;
+    const numPoints = 32;
+
+    return Array(numPoints).fill(null).map((_, i) => {
+        const angle = (i * Math.PI) / numSegments;
+        const isControl = i % 2 !== 0;
+
+        // This factor (approx 1.019) ensures the Bezier curve mid-point 
+        // actually touches the circle/shape radius.
+        const angleOffset = Math.PI / numPoints;
+        const controlScale = isControl ? (1 / Math.cos(angleOffset)) : 1.0;
+
         let x = 0, y = 0;
+
         if (type === "circle") {
-            const r = 0.85; x = r * Math.cos(angle); y = r * Math.sin(angle);
+            const r = 0.85 * controlScale;
+            // Negative sin to match your heart's CCW winding
+            x = r * Math.cos(angle);
+            y = -r * Math.sin(angle);
+
         } else if (type === "heart") {
-            const hx = 16 * Math.sin(angle) ** 3;
-            const hy = 13 * Math.cos(angle) - 5 * Math.cos(2 * angle) - 2 * Math.cos(3 * angle) - Math.cos(4 * angle);
-            const m = 16.5;
-            if (i % 2 === 0) { x = hx / m; y = hy / m; }
-            else {
-                const prev = (i - 1) * Math.PI / 16, next = ((i + 1) % 32) * Math.PI / 16;
-                const calc = a => ({ x: 16 * Math.sin(a) ** 3 / m, y: (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a)) / m });
-                const p1 = calc(prev), p2 = calc(next);
-                x = (p1.x + p2.x) * 0.5; y = (p1.y + p2.y) * 0.5;
-            }
+            const m = 18; // Slightly larger divisor to keep it in frame
+            // Using your negated Sin for CCW winding
+            const getHeart = (a, s) => {
+                const hx = -(16 * Math.sin(a) ** 3);
+                const hy = (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+                return { x: (hx / m) * s, y: (hy / m) * s };
+            };
+
+            const p = getHeart(angle, controlScale);
+            x = p.x; y = p.y;
+
         } else if (type === "star") {
-            const outer = Math.floor(i / 2) % 2 === 0;
-            const r = i % 2 === 0 ? (outer ? 0.9 : 0.45) : (outer ? 0.75 : 0.55);
-            x = r * Math.cos(angle); y = r * Math.sin(angle);
+            // Stars are tricky; control points should usually be near the 
+            // intersection of the two edges.
+            const isTip = (i % 4 === 0);       // Outer point
+            const isPit = ((i - 2) % 4 === 0); // Inner point
+
+            let r = 0.9;
+            if (isPit) r = 0.4;
+            if (isControl) r = 0.65; // Mid-way for the control points
+
+            x = r * Math.cos(angle);
+            y = -r * Math.sin(angle);
         }
-        return { x, y, anchor: i % 2 === 0 };
+
+        return { x, y, anchor: !isControl };
     });
 }
