@@ -177,6 +177,8 @@
         <button onclick="document.getElementById('importInput').click()">📂 Import JSON</button>
         <input type="file" id="importInput" accept=".json" style="display:none">
         <button class="primary" onclick="downloadJSON()">💾 Export JSON</button>
+        <a href="/preview.html" target="_blank" style="color: #888; font-size: 12px; margin-left: 10px;">Open
+            Previewer</a>
     </header>
 
     <div class="info">Drag points to edit. Blue=Anchors, Red=Controls. Ctrl+Z/Y for undo/redo. Click point for precise
@@ -248,7 +250,7 @@
 
             // 🔹 HIGH-RES PREVIEW (Isolated State)
             if (showHighRes) {
-                const resPts = evaluateHighRes(64); // 64 points total
+                const resPts = evaluateHighRes(128); // 64 points total
                 if (resPts.length > 0) {
                     ctx.save();
                     ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)';
@@ -381,20 +383,62 @@
             draw();
         }
 
-        // ================= HIGH-RES EVALUATOR =================
+        // ================= ARC-LENGTH EVALUATOR (Matches Python Script) =================
         function evaluateHighRes(totalPoints) {
-            let ptsArr = [];
-            const perCurve = Math.ceil(totalPoints / 16);
+            let rawPoints = [];
+            const samplesPerSegment = 20; // Internal resolution to measure the curve's length
+
+            // 1. Generate a high-density list of points to "measure" the shape
             for (let i = 0; i < 16; i++) {
                 let p0 = pts[2 * i], p1 = pts[2 * i + 1], p2 = pts[2 * (i + 1) % 32];
-                for (let j = 0; j < perCurve; j++) {
-                    let t = j / perCurve;
+                for (let j = 0; j < samplesPerSegment; j++) {
+                    let t = j / samplesPerSegment;
+                    // Quadratic Bezier Formula
                     let x = (1 - t) ** 2 * p0.x + 2 * (1 - t) * t * p1.x + t ** 2 * p2.x;
                     let y = (1 - t) ** 2 * p0.y + 2 * (1 - t) * t * p1.y + t ** 2 * p2.y;
-                    if (isFinite(x) && isFinite(y)) ptsArr.push({ x, y });
+                    rawPoints.push({ x, y });
                 }
             }
-            return ptsArr;
+            // Close the loop to ensure the last segment is measured
+            rawPoints.push(rawPoints[0]);
+
+            // 2. Calculate cumulative distance (Arc Length)
+            let lengths = [0];
+            let totalLength = 0;
+            for (let i = 1; i < rawPoints.length; i++) {
+                let d = Math.hypot(rawPoints[i].x - rawPoints[i - 1].x, rawPoints[i].y - rawPoints[i - 1].y);
+                totalLength += d;
+                lengths.push(totalLength);
+            }
+
+            // 3. Resample evenly (Linear Interpolation along the total length)
+            let resampled = [];
+            for (let i = 0; i < totalPoints; i++) {
+                let targetDist = (i / totalPoints) * totalLength;
+
+                // Find which "measured" segment this distance falls into
+                let idx = lengths.findIndex(l => l >= targetDist);
+                if (idx === -1) idx = lengths.length - 1;
+                if (idx === 0) {
+                    resampled.push(rawPoints[0]);
+                    continue;
+                }
+
+                // Interpolate between the two measurement points for precision
+                let l1 = lengths[idx - 1];
+                let l2 = lengths[idx];
+                let ratio = (targetDist - l1) / (l2 - l1);
+
+                let p1 = rawPoints[idx - 1];
+                let p2 = rawPoints[idx];
+
+                resampled.push({
+                    x: p1.x + (p2.x - p1.x) * ratio,
+                    y: p1.y + (p2.y - p1.y) * ratio
+                });
+            }
+
+            return resampled;
         }
 
         // ================= VALIDATION =================

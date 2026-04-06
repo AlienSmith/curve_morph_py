@@ -125,6 +125,49 @@ def load_and_upgrade(json_path, target_segments=64):
         pts = np.roll(pts, 1, axis=0)
     return pts
 
+# ================================
+# The loader with metadata support
+# ================================
+
+
+def load_and_upgrade_v1(json_path, target_segments=64):
+    with open(json_path, 'r') as f:
+        content = json.load(f)
+
+    # --- SMART PARSING ---
+    # Check if we have the new "Manifest" format or the old "Raw Array"
+    if isinstance(content, dict) and "points" in content:
+        editor_pts = np.array(content["points"], dtype=np.float32)
+        meta = content.get("meta", {})
+        winding_hint = meta.get("winding", "UNKNOWN")
+        is_normalized = meta.get("normalized", False)
+        print(
+            f"📦 Loaded Manifest: {winding_hint}, Normalized: {is_normalized}")
+    else:
+        # Fallback for old 32x2 array files
+        editor_pts = np.array(content, dtype=np.float32)
+        winding_hint = "UNKNOWN"
+
+    assert editor_pts.shape == (
+        32, 2), f"Expected (32,2), got {editor_pts.shape}"
+
+    # 1. Upgrade to higher resolution [A,C,A,C...]
+    pts = upgrade_to_uniform_resolution(editor_pts, target_segments)
+
+    # 2. ENFORCE CCW WINDING (Using the meta hint or manual calculation)
+    x, y = pts[:, 0], pts[:, 1]
+    # Shoelace formula for area
+    area = 0.5 * (np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]
+                         ) + (x[-1] * y[0] - x[0] * y[-1]))
+
+    if area < 0:
+        # Shape is Clockwise, flip it to CCW for the FFT
+        pts = pts[::-1]
+        # After flipping, we roll by 1 to maintain the [A, C, A, C] alignment
+        pts = np.roll(pts, 1, axis=0)
+        print("🔄 Fixed Winding: Flipped CW to CCW")
+
+    return pts
 # ==============================
 # FFT MORPHER (Now operates on higher-res)
 # ==============================

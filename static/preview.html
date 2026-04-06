@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Shape Morph Previewer</title>
+    <style>
+        body {
+            background: #1a1a1a;
+            color: #eee;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .card {
+            background: #222;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            width: 400px;
+            text-align: center;
+        }
+
+        input {
+            margin: 10px 0;
+            display: block;
+            width: 100%;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+        }
+
+        button:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+
+        #result {
+            margin-top: 20px;
+            display: none;
+        }
+
+        img {
+            max-width: 100%;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        .nav {
+            margin-bottom: 20px;
+        }
+
+        .nav a {
+            color: #888;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .nav a:hover {
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="nav"><a href="/">← Back to Editor</a></div>
+    <div class="card">
+        <h3>Morph Previewer</h3>
+        <label>Shape A (Start):</label>
+        <input type="file" id="fileA" accept=".json">
+        <label>Shape B (End):</label>
+        <input type="file" id="fileB" accept=".json">
+        <button id="genBtn" onclick="generate()">Generate GIF</button>
+    </div>
+
+    <div id="result">
+        <h4>Morphing Result</h4>
+        <img id="gifOut" src="" alt="Morphing GIF">
+        <br><br>
+        <a id="dlLink" download="morph.gif"><button style="background:#059669">Download GIF</button></a>
+    </div>
+
+    <script>
+        async function generate() {
+            const fA = document.getElementById('fileA').files[0];
+            const fB = document.getElementById('fileB').files[0];
+            if (!fA || !fB) return alert("Select two JSON files!");
+
+            const btn = document.getElementById('genBtn');
+            btn.disabled = true;
+            btn.innerText = "Processing FFT...";
+
+            const fd = new FormData();
+            fd.append('fileA', fA);
+            fd.append('fileB', fB);
+
+            try {
+                const resp = await fetch('/api/generate-morph', { method: 'POST', body: fd });
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('gifOut').src = url;
+                document.getElementById('dlLink').href = url;
+            } catch (e) {
+                alert("Error generating GIF. Check server logs.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Generate GIF";
+            }
+        }
+    </script>
+</body>
+
+</html>

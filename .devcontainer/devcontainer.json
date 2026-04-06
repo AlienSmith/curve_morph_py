@@ -19,5 +19,6 @@
     },
     "workspaceFolder": "/workspace",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "postCreateCommand": "pip install fastapi uvicorn",
     "remoteUser": "root"
 }
