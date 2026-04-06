@@ -87,24 +87,32 @@ async def generate_morph(
     except Exception as e:
         return {"error": f"Processing failed: {str(e)}"}
 
-    # Render the Animation
-    fig, ax = plt.subplots(figsize=(4, 4), dpi=80)
-    ax.set_xlim(-1.5, 1.5)
-    ax.set_ylim(-1.5, 1.5)
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+
+    # Tighten the viewport so the shape fills more space
+    ax.set_xlim(-1.2, 1.2)
+    ax.set_ylim(-1.2, 1.2)
     ax.axis('off')
     ax.set_aspect('equal')
-    curve, = ax.plot([], [], 'b-', lw=2)
+
+    # Increase line width (lw) and marker size (ms) for the higher resolution
+    curve, = ax.plot([], [], 'b-', lw=3)
+    dots, = ax.plot([], [], 'ro', ms=4)
 
     def update(f):
         t = f / 40.0
         t_ease = t**2 * (3 - 2*t)
         pts = morpher.evaluate(t_ease)
+
         poly = bezier_line(pts)
         curve.set_data(poly[:, 0], poly[:, 1])
-        return curve,
+        dots.set_data(pts[:, 0], pts[:, 1])
 
-    # Generate and save the GIF
+        return curve, dots
+
+    # Generate the GIF
     anim = FuncAnimation(fig, update, frames=41, blit=True)
+    # Using 'pillow' writer; note that higher DPI makes generation slower
     anim.save(gif_path, writer='pillow', fps=20)
     plt.close(fig)
 
