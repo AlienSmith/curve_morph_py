@@ -174,7 +174,7 @@ def load_and_upgrade_v1(json_path, target_segments=64):
 # FFT MORPHER (Now operates on higher-res)
 # ==============================
 
-
+# one won't shrinks
 # class FourierShapeMorpher:
 #     def __init__(self, pts_A, pts_B, n_segments=1, spectral_smooth=0.15):
 #         self.A = np.asarray(pts_A, dtype=np.float32)
@@ -272,7 +272,7 @@ def load_and_upgrade_v1(json_path, target_segments=64):
 
 #         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
 
-
+# two shrinks
 # class FourierShapeMorpher:
 #     def __init__(self, pts_A, pts_B, n_segments=1, spectral_smooth=0.15):
 #         self.A = np.asarray(pts_A, dtype=np.float32)
@@ -368,7 +368,7 @@ def load_and_upgrade_v1(json_path, target_segments=64):
 
 #         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
 
-
+# one no shrink
 # class FourierShapeMorpher:
 #     def __init__(self, pts_A, pts_B, n_segments=1, spectral_smooth=0.05):
 #         self.A = np.asarray(pts_A, dtype=np.float32)
@@ -473,7 +473,7 @@ def load_and_upgrade_v1(json_path, target_segments=64):
 
 #         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
 
-
+# could be inconsistent
 # class FourierShapeMorpher:
 #     def __init__(self, pts_A, pts_B, n_segments=1):
 #         self.A = np.asarray(pts_A, dtype=np.float32)
