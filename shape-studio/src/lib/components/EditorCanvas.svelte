@@ -1,13 +1,16 @@
 <script>
     import { onMount, onDestroy } from "svelte";
-    import { shapeState } from "../stores/editorStore.js";
-    import { toScreen, evaluateHighRes, toWorld } from "../utils/geometry.js";
-    import { actions } from "../stores/editorStore.js";
+    import { shapeState, actions } from "../stores/editorStore.js";
+    import { evaluateHighRes } from "../utils/geometry.js";
 
     let canvas;
     let ctx;
     let dragIdx = -1;
-    const SCALE = 150;
+    let isPanning = false;
+    let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
+
+    const BASE_SCALE = 150;
+    let viewport = { x: 0, y: 0, zoom: 1 };
     let W = 800,
         H = 800;
     let resizeObserver;
@@ -16,7 +19,7 @@
     $: refPts = reference?.points || null;
     $: showRef = reference?.visible || false;
 
-    // ✅ TRIGGER: Redraw when pts OR reference changes
+    // ✅ TRIGGER: Redraw when pts, viewport, or reference changes
     $: if (pts && ctx) draw();
 
     onMount(() => {
@@ -42,47 +45,71 @@
         canvas.height = H;
     }
 
+    // --- TRANSFORM HELPERS ---
+    function getEffectiveScale() {
+        return BASE_SCALE * viewport.zoom;
+    }
+
+    function toScreen(p) {
+        const s = getEffectiveScale();
+        return {
+            x: W / 2 + viewport.x + p.x * s,
+            y: H / 2 + viewport.y - p.y * s,
+        };
+    }
+
+    function toWorld(sx, sy) {
+        const s = getEffectiveScale();
+        return {
+            x: (sx - W / 2 - viewport.x) / s,
+            y: (H / 2 + viewport.y - sy) / s,
+        };
+    }
+
+    // --- DRAWING ---
     function draw() {
         if (!ctx || !pts) return;
         ctx.clearRect(0, 0, W, H);
         ctx.save();
 
-        // 1. Grid
+        // 1. Adaptive Grid
+        const tl = toWorld(0, 0);
+        const br = toWorld(W, H);
+        const gridStep = 0.5; // World units
+        const minX = Math.floor(Math.min(tl.x, br.x) / gridStep) * gridStep;
+        const maxX = Math.ceil(Math.max(tl.x, br.x) / gridStep) * gridStep;
+        const minY = Math.floor(Math.min(tl.y, br.y) / gridStep) * gridStep;
+        const maxY = Math.ceil(Math.max(tl.y, br.y) / gridStep) * gridStep;
+
         ctx.strokeStyle = "#222";
         ctx.lineWidth = 1;
-        for (let i = -W / 2; i < W / 2; i += SCALE / 2) {
-            ctx.beginPath();
-            ctx.moveTo(W / 2 + i, 0);
-            ctx.lineTo(W / 2 + i, H);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, H / 2 - i);
-            ctx.lineTo(W, H / 2 - i);
-            ctx.stroke();
+        ctx.beginPath();
+        for (let x = minX; x <= maxX; x += gridStep) {
+            const sx = toScreen({ x, y: 0 }).x;
+            ctx.moveTo(sx, 0);
+            ctx.lineTo(sx, H);
         }
+        for (let y = minY; y <= maxY; y += gridStep) {
+            const sy = toScreen({ x: 0, y }).y;
+            ctx.moveTo(0, sy);
+            ctx.lineTo(W, sy);
+        }
+        ctx.stroke();
 
-        // ✅ Reference Layer (Now using Quadratic Curves)
+        // 2. Reference Layer
         if (showRef && refPts && refPts.length === 32) {
             ctx.save();
             ctx.strokeStyle = "rgba(255, 255, 255, 1.0)";
             ctx.lineWidth = 1.5;
             ctx.setLineDash([6, 4]);
             ctx.beginPath();
-
-            // Start at the first anchor
-            const s0 = toScreen(refPts[0], W, H, SCALE);
+            const s0 = toScreen(refPts[0]);
             ctx.moveTo(s0.x, s0.y);
-
-            // Loop through the 16 segments
             for (let i = 0; i < 16; i++) {
-                // Control point is the odd index (1, 3, 5...)
-                const c = toScreen(refPts[2 * i + 1], W, H, SCALE);
-                // Next anchor is the even index (2, 4, 6...), wrapping at 32
-                const e = toScreen(refPts[(2 * i + 2) % 32], W, H, SCALE);
-
+                const c = toScreen(refPts[2 * i + 1]);
+                const e = toScreen(refPts[(2 * i + 2) % 32]);
                 ctx.quadraticCurveTo(c.x, c.y, e.x, e.y);
             }
-
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.restore();
@@ -92,11 +119,11 @@
         ctx.strokeStyle = "#4ade80";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        let s0 = toScreen(pts[0], W, H, SCALE);
+        let s0 = toScreen(pts[0]);
         ctx.moveTo(s0.x, s0.y);
         for (let i = 0; i < 16; i++) {
-            const c = toScreen(pts[2 * i + 1], W, H, SCALE);
-            const e = toScreen(pts[(2 * i + 2) % 32], W, H, SCALE);
+            const c = toScreen(pts[2 * i + 1]);
+            const e = toScreen(pts[(2 * i + 2) % 32]);
             ctx.quadraticCurveTo(c.x, c.y, e.x, e.y);
         }
         ctx.stroke();
@@ -109,17 +136,17 @@
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 3]);
             ctx.beginPath();
-            let rs0 = toScreen(res[0], W, H, SCALE);
+            let rs0 = toScreen(res[0]);
             ctx.moveTo(rs0.x, rs0.y);
             for (let i = 1; i < res.length; i++) {
-                const r = toScreen(res[i], W, H, SCALE);
+                const r = toScreen(res[i]);
                 ctx.lineTo(r.x, r.y);
             }
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.fillStyle = "rgba(251,191,36,0.7)";
             for (let i = 0; i < res.length; i += 1) {
-                const r = toScreen(res[i], W, H, SCALE);
+                const r = toScreen(res[i]);
                 ctx.beginPath();
                 ctx.arc(r.x, r.y, 2.5, 0, Math.PI * 2);
                 ctx.fill();
@@ -132,9 +159,9 @@
         ctx.setLineDash([5, 4]);
         ctx.lineWidth = 1;
         for (let i = 0; i < 16; i++) {
-            const c = toScreen(pts[2 * i + 1], W, H, SCALE);
-            const a1 = toScreen(pts[2 * i], W, H, SCALE);
-            const a2 = toScreen(pts[(2 * i + 2) % 32], W, H, SCALE);
+            const c = toScreen(pts[2 * i + 1]);
+            const a1 = toScreen(pts[2 * i]);
+            const a2 = toScreen(pts[(2 * i + 2) % 32]);
             ctx.beginPath();
             ctx.moveTo(a1.x, a1.y);
             ctx.lineTo(c.x, c.y);
@@ -148,7 +175,7 @@
 
         // 6. Points
         pts.forEach((p, i) => {
-            const s = toScreen(p, W, H, SCALE);
+            const s = toScreen(p);
             const sel = i === selectedIdx;
             ctx.beginPath();
             ctx.arc(s.x, s.y, p.anchor ? 6 : 4, 0, Math.PI * 2);
@@ -161,39 +188,76 @@
         ctx.restore();
     }
 
-    function getCanvasCoords(e) {
-        const rect = canvas.getBoundingClientRect();
-        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    // --- INTERACTIONS ---
+    function onWheel(e) {
+        e.preventDefault();
+        const { offsetX: mx, offsetY: my } = e;
+        const worldBefore = toWorld(mx, my);
+
+        const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        viewport.zoom = Math.min(5, Math.max(0.1, viewport.zoom * zoomFactor));
+
+        // Adjust pan to keep world point under cursor stable
+        const screenAfter = toScreen(worldBefore);
+        viewport.x -= screenAfter.x - mx;
+        viewport.y -= screenAfter.y - my;
+
+        draw();
     }
 
     function onDown(e) {
         if (!pts) return;
-        const { x, y } = getCanvasCoords(e);
-        dragIdx = -1;
+        const { offsetX: mx, offsetY: my } = e;
+
+        // Hit test
+        let hitIdx = -1;
         for (let i = 0; i < pts.length; i++) {
-            const s = toScreen(pts[i], W, H, SCALE);
-            if (Math.hypot(x - s.x, y - s.y) < 16) {
-                dragIdx = i;
+            const s = toScreen(pts[i]);
+            if (Math.hypot(mx - s.x, my - s.y) < 16) {
+                hitIdx = i;
                 break;
             }
         }
-        actions.selectPoint(dragIdx);
-        if (dragIdx !== -1) canvas.setPointerCapture(e.pointerId);
+
+        if (hitIdx !== -1 && e.button === 0) {
+            dragIdx = hitIdx;
+            actions.selectPoint(dragIdx);
+            canvas.setPointerCapture(e.pointerId);
+        } else if (e.button === 2 || (e.button === 0 && hitIdx === -1)) {
+            isPanning = true;
+            panStart = {
+                x: e.clientX,
+                y: e.clientY,
+                panX: viewport.x,
+                panY: viewport.y,
+            };
+            canvas.setPointerCapture(e.pointerId);
+            canvas.style.cursor = "grabbing";
+        }
     }
 
     function onMove(e) {
-        if (dragIdx === -1) return;
-        const { x, y } = getCanvasCoords(e);
-        const w = toWorld(x, y, W, H, SCALE);
-        pts[dragIdx].x = w.x;
-        pts[dragIdx].y = w.y;
-        draw();
+        if (dragIdx !== -1) {
+            const { offsetX: mx, offsetY: my } = e;
+            const w = toWorld(mx, my);
+            pts[dragIdx].x = w.x;
+            pts[dragIdx].y = w.y;
+            draw();
+        } else if (isPanning) {
+            viewport.x = panStart.panX + (e.clientX - panStart.x);
+            viewport.y = panStart.panY + (e.clientY - panStart.y);
+            draw();
+        }
     }
 
     function onUp() {
         if (dragIdx !== -1) {
             actions.commitDrag(dragIdx, pts[dragIdx].x, pts[dragIdx].y);
             dragIdx = -1;
+        }
+        if (isPanning) {
+            isPanning = false;
+            canvas.style.cursor = "crosshair";
         }
     }
 </script>
@@ -205,4 +269,7 @@
     on:pointerdown={onDown}
     on:pointermove={onMove}
     on:pointerup={onUp}
+    on:pointerleave={onUp}
+    on:wheel={onWheel}
+    on:contextmenu|preventDefault
 ></canvas>
