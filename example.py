@@ -168,9 +168,411 @@ def load_and_upgrade_v1(json_path, target_segments=64):
         print("🔄 Fixed Winding: Flipped CW to CCW")
 
     return pts
+
+
 # ==============================
 # FFT MORPHER (Now operates on higher-res)
 # ==============================
+
+
+# class FourierShapeMorpher:
+#     def __init__(self, pts_A, pts_B, n_segments=1, spectral_smooth=0.15):
+#         self.A = np.asarray(pts_A, dtype=np.float32)
+#         self.B = np.asarray(pts_B, dtype=np.float32)
+#         self.n_points = len(self.A)
+#         self.n_segments = max(1, int(n_segments))
+#         self.spectral_smooth = spectral_smooth
+#         self._precompute()
+
+#     def _precompute(self):
+#         N = self.n_points
+#         Az = self.A[:, 0] + 1j * self.A[:, 1]
+#         Bz = self.B[:, 0] + 1j * self.B[:, 1]
+
+#         self.centroid_A = Az.mean()
+#         self.centroid_B = Bz.mean()
+
+#         A_c = Az - self.centroid_A
+#         B_c = Bz - self.centroid_B
+
+#         # 1. Energy normalization (keeps scale consistent)
+#         self.scale = np.linalg.norm(A_c) / (np.linalg.norm(B_c) + 1e-8)
+#         B_c *= self.scale
+
+#         # 2. Deterministic cyclic alignment (breaks circle symmetry)
+#         corr = np.abs(np.fft.ifft(np.fft.fft(A_c) * np.conj(np.fft.fft(B_c))))
+#         # Gaussian bias strongly penalizes large phase shifts, preventing arbitrary 180° flips
+#         bias = np.exp(-0.5 * (np.arange(N) / (N * 0.2))**2)
+#         self.phase_shift = np.argmax(corr * bias)
+#         B_c = np.roll(B_c, -self.phase_shift)
+
+#         # 3. Fourier descriptors + spectral taper
+#         self.window = self._smooth_spectral_window(N)
+#         self.FA = np.fft.fft(A_c) * self.window
+#         self.FB = np.fft.fft(B_c) * self.window
+
+#         # 4. Precompute segment boundaries using stable Cartesian interpolation
+#         self.seg_FAs, self.seg_FBs = [], []
+#         self.seg_cA, self.seg_cB = [], []
+#         boundary_ts = np.linspace(0.0, 1.0, self.n_segments + 1)
+
+#         for i in range(self.n_segments):
+#             t0, t1 = boundary_ts[i], boundary_ts[i+1]
+#             self.seg_cA.append((1-t0)*self.centroid_A + t0*self.centroid_B)
+#             self.seg_cB.append((1-t1)*self.centroid_A + t1*self.centroid_B)
+#             self.seg_FAs.append(
+#                 self._interpolate_complex(self.FA, self.FB, t0))
+#             self.seg_FBs.append(
+#                 self._interpolate_complex(self.FA, self.FB, t1))
+
+#     def _smooth_spectral_window(self, N):
+#         """Gaussian taper to suppress unstable high frequencies."""
+#         k = np.arange(N)
+#         k = np.minimum(k, N - k)
+#         sigma = N * self.spectral_smooth
+#         return np.exp(-0.5 * (k / sigma)**2)
+
+#     def _interpolate_complex(self, F1, F2, t):
+#         """
+#         Robust Cartesian interpolation with zero-crossing stabilization.
+#         Replaces polar interpolation to prevent independent harmonic phase twisting.
+#         """
+#         # Linear blend in complex plane preserves relative phase between all harmonics
+#         Ft = (1.0 - t) * F1 + t * F2
+
+#         # Prevent magnitude collapse near zero without disrupting phase coherence
+#         mags = np.abs(Ft)
+#         floor = 1e-6
+#         mask = mags < floor
+#         if np.any(mask):
+#             Ft[mask] = floor * np.exp(1j * np.angle(F1[mask]))
+
+#         return Ft
+
+#     def evaluate(self, t_ease):
+#         t_ease = np.clip(t_ease, 0.0, 1.0)
+
+#         if self.n_segments == 1:
+#             t_blend = 3 * t_ease**2 - 2 * t_ease**3  # Smoothstep for spatial blending
+#             Ft = self._interpolate_complex(self.FA, self.FB, t_ease)
+#             z = np.fft.ifft(Ft) + (1 - t_blend) * self.centroid_A + \
+#                 t_blend * self.centroid_B
+#             return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
+
+#         # Segment mapping
+#         seg_idx = int(t_ease * self.n_segments)
+#         seg_idx = min(seg_idx, self.n_segments - 1)
+#         local_t = (t_ease * self.n_segments) - seg_idx
+#         t_spatial = 3 * local_t**2 - 2 * local_t**3
+
+#         FA, FB = self.seg_FAs[seg_idx], self.seg_FBs[seg_idx]
+#         Ft = self._interpolate_complex(FA, FB, local_t)
+#         z = np.fft.ifft(Ft) + (1 - t_spatial) * \
+#             self.seg_cA[seg_idx] + t_spatial * self.seg_cB[seg_idx]
+
+#         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
+
+
+# class FourierShapeMorpher:
+#     def __init__(self, pts_A, pts_B, n_segments=1, spectral_smooth=0.15):
+#         self.A = np.asarray(pts_A, dtype=np.float32)
+#         self.B = np.asarray(pts_B, dtype=np.float32)
+#         self.n_points = len(self.A)
+#         self.n_segments = max(1, int(n_segments))
+#         self.spectral_smooth = spectral_smooth
+#         self._precompute()
+
+#     def _precompute(self):
+#         N = self.n_points
+#         Az = self.A[:, 0] + 1j * self.A[:, 1]
+#         Bz = self.B[:, 0] + 1j * self.B[:, 1]
+
+#         self.centroid_A = Az.mean()
+#         self.centroid_B = Bz.mean()
+
+#         A_c = Az - self.centroid_A
+#         B_c = Bz - self.centroid_B
+
+#         # 1. Energy matching (keeps your original shrink/expand behavior)
+#         self.scale = np.linalg.norm(A_c) / (np.linalg.norm(B_c) + 1e-8)
+#         B_c *= self.scale
+
+#         # 2. Deterministic cyclic alignment (fixes left/right overlap shifting)
+#         corr = np.abs(np.fft.ifft(np.fft.fft(A_c) * np.conj(np.fft.fft(B_c))))
+#         # Strong bias toward 0-shift prevents arbitrary flips on symmetric shapes
+#         bias = np.exp(-0.5 * (np.arange(N) / (N * 0.15))**2)
+#         self.phase_shift = np.argmax(corr * bias)
+#         B_c = np.roll(B_c, -self.phase_shift)
+
+#         # 3. Fourier descriptors + spectral taper
+#         self.window = self._smooth_spectral_window(N)
+#         self.FA = np.fft.fft(A_c) * self.window
+#         self.FB = np.fft.fft(B_c) * self.window
+
+#         # 4. Precompute segment boundaries
+#         self.seg_FAs, self.seg_FBs = [], []
+#         self.seg_cA, self.seg_cB = [], []
+#         boundary_ts = np.linspace(0.0, 1.0, self.n_segments + 1)
+
+#         for i in range(self.n_segments):
+#             t0, t1 = boundary_ts[i], boundary_ts[i+1]
+#             self.seg_cA.append((1-t0)*self.centroid_A + t0*self.centroid_B)
+#             self.seg_cB.append((1-t1)*self.centroid_A + t1*self.centroid_B)
+#             self.seg_FAs.append(
+#                 self._interpolate_complex(self.FA, self.FB, t0))
+#             self.seg_FBs.append(
+#                 self._interpolate_complex(self.FA, self.FB, t1))
+
+#     def _smooth_spectral_window(self, N):
+#         k = np.arange(N)
+#         k = np.minimum(k, N - k)
+#         sigma = N * self.spectral_smooth
+#         return np.exp(-0.5 * (k / sigma)**2)
+
+#     def _interpolate_complex(self, F1, F2, t):
+#         """
+#         Preserves original shrink/expand (geometric mean magnitude)
+#         but uses coherent phase interpolation to prevent self-intersection.
+#         """
+#         # 1. Linear blend in complex plane maintains harmonic phase relationships
+#         Ft_linear = (1.0 - t) * F1 + t * F2
+
+#         # 2. Compute target magnitude to preserve your original shrink/expand curve
+#         mag_target = np.maximum(np.abs(F1)**(1-t) * np.abs(F2)**t, 1e-6)
+#         mag_linear = np.abs(Ft_linear)
+
+#         # 3. Scale linear blend to match target magnitude, preserving phase
+#         scale = np.where(mag_linear > 1e-7, mag_target / mag_linear, 1.0)
+#         return Ft_linear * scale
+
+#     def evaluate(self, t_ease):
+#         t_ease = np.clip(t_ease, 0.0, 1.0)
+
+#         if self.n_segments == 1:
+#             t = 3 * t_ease**2 - 2 * t_ease**3  # Smoothstep for spatial blending
+#             Ft = self._interpolate_complex(self.FA, self.FB, t_ease)
+#             z = np.fft.ifft(Ft) + (1 - t) * self.centroid_A + \
+#                 t * self.centroid_B
+#             return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
+
+#         # Segment mapping
+#         seg_idx = int(t_ease * self.n_segments)
+#         seg_idx = min(seg_idx, self.n_segments - 1)
+#         local_t = (t_ease * self.n_segments) - seg_idx
+#         t_spatial = 3 * local_t**2 - 2 * local_t**3
+
+#         FA, FB = self.seg_FAs[seg_idx], self.seg_FBs[seg_idx]
+#         Ft = self._interpolate_complex(FA, FB, local_t)
+#         z = np.fft.ifft(Ft) + (1 - t_spatial) * \
+#             self.seg_cA[seg_idx] + t_spatial * self.seg_cB[seg_idx]
+
+#         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
+
+
+# class FourierShapeMorpher:
+#     def __init__(self, pts_A, pts_B, n_segments=1, spectral_smooth=0.05):
+#         self.A = np.asarray(pts_A, dtype=np.float32)
+#         self.B = np.asarray(pts_B, dtype=np.float32)
+#         self.n_points = len(self.A)
+#         self.n_segments = max(1, int(n_segments))
+#         self.spectral_smooth = spectral_smooth
+#         self._precompute()
+
+#     def _precompute(self):
+#         N = self.n_points
+#         Az = self.A[:, 0] + 1j * self.A[:, 1]
+#         Bz = self.B[:, 0] + 1j * self.B[:, 1]
+
+#         self.centroid_A = Az.mean()
+#         self.centroid_B = Bz.mean()
+
+#         A_c = Az - self.centroid_A
+#         B_c = Bz - self.centroid_B
+
+#         # 1. Energy matching
+#         self.scale = np.linalg.norm(A_c) / (np.linalg.norm(B_c) + 1e-8)
+#         B_c *= self.scale
+
+#         # 2. Optimal cyclic alignment via cross-correlation
+#         corr = np.abs(np.fft.ifft(np.fft.fft(A_c) * np.conj(np.fft.fft(B_c))))
+#         # Gentle bias toward 0-shift breaks circle symmetry & prevents arbitrary twisting
+#         corr *= np.exp(-0.5 * (np.arange(N) / (N * 0.25))**2)
+#         self.phase_shift = np.argmax(corr)
+#         B_c = np.roll(B_c, -self.phase_shift)
+
+#         # 3. Fourier descriptors + spectral taper
+#         self.window = self._smooth_spectral_window(N)
+#         self.FA = np.fft.fft(A_c) * self.window
+#         self.FB = np.fft.fft(B_c) * self.window
+
+#         # 4. Precompute exact segment boundaries using continuous interpolation
+#         self.seg_FAs, self.seg_FBs = [], []
+#         self.seg_cA, self.seg_cB = [], []
+#         boundary_ts = np.linspace(0.0, 1.0, self.n_segments + 1)
+
+#         for i in range(self.n_segments):
+#             t0, t1 = boundary_ts[i], boundary_ts[i+1]
+#             self.seg_cA.append((1-t0)*self.centroid_A + t0*self.centroid_B)
+#             self.seg_cB.append((1-t1)*self.centroid_A + t1*self.centroid_B)
+#             self.seg_FAs.append(
+#                 self._interpolate_complex(self.FA, self.FB, t0))
+#             self.seg_FBs.append(
+#                 self._interpolate_complex(self.FA, self.FB, t1))
+
+#     def _smooth_spectral_window(self, N):
+#         """Gaussian taper to suppress unstable high frequencies."""
+#         k = np.arange(N)
+#         k = np.minimum(k, N - k)
+#         sigma = N * self.spectral_smooth
+#         return np.exp(-0.5 * (k / sigma)**2)
+
+#     def _interpolate_complex(self, F1, F2, t):
+#         """
+#         Cartesian interpolation preserves harmonic phase relationships.
+#         Prevents independent frequency twisting that causes self-intersection.
+#         """
+#         # Linear blend in complex domain (much more stable than polar interpolation)
+#         Ft = (1.0 - t) * F1 + t * F2
+
+#         # Magnitude floor to prevent numerical instability near zero-crossings
+#         mags = np.abs(Ft)
+#         floor = 1e-6
+#         mask = mags < floor
+#         if np.any(mask):
+#             # Fallback to source phase to avoid sudden 180° phase flips
+#             Ft[mask] = floor * np.exp(1j * np.angle(F1[mask]))
+
+#         return Ft
+
+#     def evaluate(self, t_ease):
+#         t_ease = np.clip(t_ease, 0.0, 1.0)
+
+#         if self.n_segments == 1:
+#             # Linear for Fourier (stable harmonic blending)
+#             # Smoothstep for centroid (natural visual easing)
+#             t_fourier = t_ease
+#             t_spatial = 3 * t_ease**2 - 2 * t_ease**3
+
+#             Ft = self._interpolate_complex(self.FA, self.FB, t_fourier)
+#             z = np.fft.ifft(Ft) + (1 - t_spatial) * self.centroid_A + \
+#                 t_spatial * self.centroid_B
+#             return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
+
+#         # Segment mapping
+#         seg_idx = int(t_ease * self.n_segments)
+#         seg_idx = min(seg_idx, self.n_segments - 1)
+#         local_t = (t_ease * self.n_segments) - seg_idx
+
+#         t_fourier = local_t
+#         t_spatial = 3 * local_t**2 - 2 * local_t**3
+
+#         FA, FB = self.seg_FAs[seg_idx], self.seg_FBs[seg_idx]
+#         Ft = self._interpolate_complex(FA, FB, t_fourier)
+#         z = np.fft.ifft(Ft) + (1 - t_spatial) * \
+#             self.seg_cA[seg_idx] + t_spatial * self.seg_cB[seg_idx]
+
+#         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
+
+
+# class FourierShapeMorpher:
+#     def __init__(self, pts_A, pts_B, n_segments=1):
+#         self.A = np.asarray(pts_A, dtype=np.float32)
+#         self.B = np.asarray(pts_B, dtype=np.float32)
+#         self.n_points = len(pts_A)
+#         self.n_segments = max(1, int(n_segments))
+#         self._precompute()
+#         print(f"Segments initialized: {self.n_segments}")
+
+#     def _slerp(self, F1, F2, t):
+#         """球面线性插值傅里叶描述子，保证幅度与相位平滑过渡"""
+#         norm1, norm2 = np.linalg.norm(F1), np.linalg.norm(F2)
+#         if norm1 < 1e-8 or norm2 < 1e-8:
+#             return (1 - t) * F1 + t * F2
+
+#         F1_n, F2_n = F1 / norm1, F2 / norm2
+#         cos_om = np.clip(np.real(np.sum(F1_n * np.conj(F2_n))), -1.0, 1.0)
+#         omega = np.arccos(cos_om)
+
+#         if omega < 1e-6:
+#             return F1 * (1 - t) + F2 * t
+
+#         sin_om = np.sin(omega)
+#         c1 = np.sin((1 - t) * omega) / sin_om * norm1
+#         c2 = np.sin(t * omega) / sin_om * norm2
+#         return c1 * F1_n + c2 * F2_n
+
+#     def _precompute(self):
+#         N = self.n_points
+#         Az = self.A[:, 0] + 1j * self.A[:, 1]
+#         Bz = self.B[:, 0] + 1j * self.B[:, 1]
+
+#         self.centroid_A = Az.mean()
+#         self.centroid_B = Bz.mean()
+
+#         A_c = Az - self.centroid_A
+#         B_c = Bz - self.centroid_B
+
+#         self.scale = np.linalg.norm(A_c) / (np.linalg.norm(B_c) + 1e-8)
+#         B_c *= self.scale
+
+#         # 最优起始相位对齐
+#         best_err, best_k = np.inf, 0
+#         for k in range(N):
+#             err = np.sum(np.abs(A_c - np.roll(B_c, k))**2)
+#             if err < best_err:
+#                 best_err, best_k = err, k
+#         B_c = np.roll(B_c, best_k)
+
+#         self.FA = np.fft.fft(A_c)
+#         self.FB = np.fft.fft(B_c)
+#         self.phase_shift = best_k
+
+#         # 🔑 核心修复：直接在频域计算分段边界，避免 ifft->fft 往返误差
+#         self.seg_FAs = []
+#         self.seg_FBs = []
+#         self.seg_cA = []
+#         self.seg_cB = []
+
+#         boundary_ts = np.linspace(0.0, 1.0, self.n_segments + 1)
+#         for i in range(self.n_segments):
+#             t_start = boundary_ts[i]
+#             t_end = boundary_ts[i + 1]
+
+#             self.seg_cA.append(
+#                 (1 - t_start) * self.centroid_A + t_start * self.centroid_B)
+#             self.seg_cB.append(
+#                 (1 - t_end) * self.centroid_A + t_end * self.centroid_B)
+#             self.seg_FAs.append(self._slerp(self.FA, self.FB, t_start))
+#             self.seg_FBs.append(self._slerp(self.FA, self.FB, t_end))
+
+#     def evaluate(self, t_ease):
+#         t_ease = np.clip(t_ease, 0.0, 1.0)
+
+#         if self.n_segments == 1:
+#             # 单段直接使用全局 Slerp + Smoothstep
+#             t = 3 * t_ease**2 - 2 * t_ease**3
+#             # 注意：slerp 本身用线性 t，easing 仅作用于逆变换后的坐标插值逻辑
+#             Ft = self._slerp(self.FA, self.FB, t_ease)
+#             # 但通常我们希望 easing 作用于整个路径。更标准的做法是 slerp 也用 easing 后的 t：
+#             # Ft = self._slerp(self.FA, self.FB, t_ease) 保持原逻辑即可，下面会修正
+#             pass
+
+#         # 🔑 分段映射
+#         seg_idx = int(t_ease * self.n_segments)
+#         seg_idx = min(seg_idx, self.n_segments - 1)
+#         local_t = (t_ease * self.n_segments) - seg_idx
+
+#         # 段内 Smoothstep（保证边界处一阶导数为 0，实现视觉无缝）
+#         t = 3 * local_t**2 - 2 * local_t**3
+
+#         FA, FB = self.seg_FAs[seg_idx], self.seg_FBs[seg_idx]
+#         # Slerp 使用线性 local_t 保持数学连续性，easing 已通过坐标混合体现
+#         # 若希望整体速度曲线一致，也可将 slerp 的 t 替换为 t_ease 映射值，但通常用线性即可
+#         Ft = self._slerp(FA, FB, local_t)
+
+#         z = np.fft.ifft(Ft) + (1 - t) * \
+#             self.seg_cA[seg_idx] + t * self.seg_cB[seg_idx]
+#         return np.c_[z.real.astype(np.float32), z.imag.astype(np.float32)]
 
 
 class FourierShapeMorpher:
