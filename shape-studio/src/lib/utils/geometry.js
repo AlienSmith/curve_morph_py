@@ -57,7 +57,6 @@ export function evaluateHighRes(pts, totalPoints = 128) {
 }
 
 export function generatePreset(type) {
-    // 16 segments means 32 points total (anchor, control, anchor...)
     const numSegments = 16;
     const numPoints = 32;
 
@@ -65,8 +64,8 @@ export function generatePreset(type) {
         const angle = (i * Math.PI) / numSegments;
         const isControl = i % 2 !== 0;
 
-        // This factor (approx 1.019) ensures the Bezier curve mid-point 
-        // actually touches the circle/shape radius.
+        // Scale factor for control points so the quadratic Bezier midpoint
+        // exactly touches the anchor radius.
         const angleOffset = Math.PI / numPoints;
         const controlScale = isControl ? (1 / Math.cos(angleOffset)) : 1.0;
 
@@ -74,34 +73,34 @@ export function generatePreset(type) {
 
         if (type === "circle") {
             const r = 0.85 * controlScale;
-            // Negative sin to match your heart's CCW winding
+            // Standard Cartesian CCW: Right → Top → Left → Bottom
             x = r * Math.cos(angle);
-            y = -r * Math.sin(angle);
+            y = r * Math.sin(angle);
 
         } else if (type === "heart") {
-            const m = 18; // Slightly larger divisor to keep it in frame
-            // Using your negated Sin for CCW winding
+            const m = 18; // Divisor to keep it in frame
+            // Standard heart traces CW. Negating X mirrors it to CCW.
             const getHeart = (a, s) => {
                 const hx = -(16 * Math.sin(a) ** 3);
-                const hy = (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+                const hy = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
                 return { x: (hx / m) * s, y: (hy / m) * s };
             };
 
             const p = getHeart(angle, controlScale);
-            x = p.x; y = p.y;
+            x = p.x;
+            y = p.y;
 
         } else if (type === "star") {
-            // Stars are tricky; control points should usually be near the 
-            // intersection of the two edges.
-            const isTip = (i % 4 === 0);       // Outer point
-            const isPit = ((i - 2) % 4 === 0); // Inner point
+            const isTip = (i % 4 === 0);
+            const isPit = ((i - 2) % 4 === 0);
 
             let r = 0.9;
             if (isPit) r = 0.4;
-            if (isControl) r = 0.65; // Mid-way for the control points
+            if (isControl) r = 0.65; // Mid-way for smoother edges
 
+            // Standard Cartesian CCW: Right → Top → Left → Bottom
             x = r * Math.cos(angle);
-            y = -r * Math.sin(angle);
+            y = r * Math.sin(angle);
         }
 
         return { x, y, anchor: !isControl };
