@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 # Import the core logic from example.py
-from example import (
+from engine import (
     FourierShapeMorpher,
     upgrade_to_uniform_resolution,
     bezier_line,
