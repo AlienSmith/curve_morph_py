@@ -57,9 +57,20 @@ class TriangleAreaConstraint(Constraint):
         d31 = p3.pos - p1.pos
         area_2 = d21[0] * d31[1] - d21[1] * d31[0]
 
-        # Prevent zero / negative area
+        # --------------------------
+        # CRITICAL: ENFORCE ORIGINAL SIGN
+        # --------------------------
+        target_sign = np.sign(self.rest_area)
+        current_sign = np.sign(area_2)
+
+        # If sign flipped, force it back (prevents inversion)
+        if current_sign != target_sign:
+            area_2 = 1e-6 * target_sign * abs(2 * self.rest_area)
+
+        # Keep area magnitude reasonable
         min_area2 = 1e-6 * abs(2 * self.rest_area)
-        area_2 = np.clip(area_2, min_area2, None)
+        if abs(area_2) < min_area2:
+            area_2 = min_area2 * target_sign
 
         C = 0.5 * area_2 - self.rest_area
         if abs(C) < 1e-6:
