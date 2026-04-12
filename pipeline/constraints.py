@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from typing import List
 from .core import Particle, Constraint
@@ -52,16 +53,18 @@ class TriangleAreaConstraint(Constraint):
     def resolve(self, particles: List[Particle]) -> float:
         p1, p2, p3 = [particles[i] for i in self.indices]
 
-        # Current signed area * 2
         d21 = p2.pos - p1.pos
         d31 = p3.pos - p1.pos
         area_2 = d21[0] * d31[1] - d21[1] * d31[0]
+
+        # Prevent zero / negative area
+        min_area2 = 1e-6 * abs(2 * self.rest_area)
+        area_2 = np.clip(area_2, min_area2, None)
 
         C = 0.5 * area_2 - self.rest_area
         if abs(C) < 1e-6:
             return 0.0
 
-        # Gradients (grad C w.r.t p1, p2, p3)
         grad1 = 0.5 * np.array([p2.pos[1] - p3.pos[1], p3.pos[0] - p2.pos[0]])
         grad2 = 0.5 * np.array([p3.pos[1] - p1.pos[1], p1.pos[0] - p3.pos[0]])
         grad3 = 0.5 * np.array([p1.pos[1] - p2.pos[1], p2.pos[0] - p1.pos[0]])
@@ -82,41 +85,59 @@ class TriangleAreaConstraint(Constraint):
 
 class SelfCollisionConstraint(Constraint):
     def __init__(self, boundary_indices: List[int], thickness: float = 0.02):
-        self.indices = boundary_indices
+        self.boundary = boundary_indices
         self.thickness = thickness
+        # Precompute boundary edges ONCE, not every resolve
+        self.edges = [
+            (boundary_indices[k], boundary_indices[(k+1) %
+             len(boundary_indices)])
+            for k in range(len(boundary_indices))
+        ]
 
     def resolve(self, particles: List[Particle]) -> float:
         max_corr = 0.0
-        # Simple N^2 check for demonstration; for production use Spatial Hashing
-        for i in self.indices:
-            p = particles[i]
-            for idx in range(len(self.indices)):
-                # Define edge (A, B)
-                a_idx = self.indices[idx]
-                b_idx = self.indices[(idx + 1) % len(self.indices)]
 
-                # Skip if vertex is part of the edge
-                if i == a_idx or i == b_idx:
+        # Only check BOUNDARY POINTS against BOUNDARY EDGES
+        # (interior vertices are safe if area constraints are strong)
+        for vi in self.boundary:
+            p = particles[vi]
+            for (a_idx, b_idx) in self.edges:
+                # Skip point's own two adjacent edges
+                if vi == a_idx or vi == b_idx:
                     continue
 
-                A, B = particles[a_idx].pos, particles[b_idx].pos
+                A = particles[a_idx].pos
+                B = particles[b_idx].pos
+
                 edge = B - A
-                L2 = np.sum(edge**2)
-                if L2 < 1e-9:
+                L2 = np.dot(edge, edge)
+                if L2 < 1e-12:
                     continue
 
-                # Project p onto edge AB
-                t = max(0, min(1, np.dot(p.pos - A, edge) / L2))
-                projection = A + t * edge
-                diff = p.pos - projection
+                # Closest point on segment
+                t = np.dot(p.pos - A, edge) / L2
+                t = np.clip(t, 0.0, 1.0)
+                proj = A + t * edge
+
+                diff = p.pos - proj
                 dist = np.linalg.norm(diff)
 
                 if dist < self.thickness:
-                    # Resolve collision
-                    normal = diff / \
-                        (dist + 1e-9) if dist > 1e-9 else np.array([0, 1])
-                    corr = (self.thickness - dist) * 0.5
+                    # Push outward only (simple, stable)
+                    corr = (self.thickness - dist) * 0.3
+                    normal = diff / (dist + 1e-12)
                     p.pos += corr * normal
-                    # (In a full solver, you'd move A and B back too)
-                    max_corr = max(max_corr, corr)
+                    if corr > max_corr:
+                        max_corr = corr
+
         return max_corr
+
+
+class TimeLogConstraint(Constraint):
+    def __init__(self, name: str):
+        self.name = name
+
+    def resolve(self, particles):
+        now = time.perf_counter()
+        print(f"[TIMER] {self.name} | resolve() called at {now:.6f}s")
+        return 0.0
