@@ -134,7 +134,7 @@ def run_morph_test_hard():
     frames, boundary_idx = generate_morph(A, B, num_frames=61)
 
     print("🔹 Rendering GIF with smooth Bézier boundary...")
-    fig, ax = plt.subplots(figsize=(6, 6), dpi=300)
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
     ax.set_xlim(-1.5, 1.5)
     ax.set_ylim(-1.5, 1.5)
     ax.axis('off')
