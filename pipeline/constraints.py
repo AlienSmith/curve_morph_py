@@ -84,49 +84,66 @@ class TriangleAreaConstraint(Constraint):
 
 
 class SelfCollisionConstraint(Constraint):
-    def __init__(self, boundary_indices: List[int], thickness: float = 0.02):
-        self.boundary = boundary_indices
-        self.thickness = thickness
-        # Precompute boundary edges ONCE, not every resolve
+    def __init__(self, boundary_indices: list, thickness: float = 0.03, skip_neighbors: int = 12):
+        self.b_verts = boundary_indices
+        self.n = len(boundary_indices)
+        self.thick = thickness
+        self.skip = skip_neighbors  # Skip nearby edges (CANNOT collide)
+
+        # Precompute ALL boundary edges ONCE
         self.edges = [
-            (boundary_indices[k], boundary_indices[(k+1) %
-             len(boundary_indices)])
-            for k in range(len(boundary_indices))
+            (boundary_indices[i], boundary_indices[(i+1) % self.n])
+            for i in range(self.n)
         ]
 
-    def resolve(self, particles: List[Particle]) -> float:
+    def resolve(self, particles):
         max_corr = 0.0
+        n = self.n
+        skip = self.skip
 
-        # Only check BOUNDARY POINTS against BOUNDARY EDGES
-        # (interior vertices are safe if area constraints are strong)
-        for vi in self.boundary:
-            p = particles[vi]
-            for (a_idx, b_idx) in self.edges:
-                # Skip point's own two adjacent edges
-                if vi == a_idx or vi == b_idx:
+        # Iterate each boundary point
+        for i in range(n):
+            vid = self.b_verts[i]
+            p = particles[vid].pos
+
+            # ONLY CHECK DISTANT EDGES — SKIP SELF + NEIGHBORS (HUGE SPEEDUP)
+            for j in range(i + skip, i + n - skip):
+                j %= n
+                a_id, b_id = self.edges[j]
+
+                # Skip edges connected to current vertex
+                if vid == a_id or vid == b_id:
                     continue
 
-                A = particles[a_idx].pos
-                B = particles[b_idx].pos
+                A = particles[a_id].pos
+                B = particles[b_id].pos
+                dx, dy = B - A
 
-                edge = B - A
-                L2 = np.dot(edge, edge)
-                if L2 < 1e-12:
+                # Vector math (optimized, no norm until needed)
+                px = p[0] - A[0]
+                py = p[1] - A[1]
+                dot = px * dx + py * dy
+                len2 = dx * dx + dy * dy
+
+                if len2 < 1e-12:
                     continue
 
-                # Closest point on segment
-                t = np.dot(p.pos - A, edge) / L2
-                t = np.clip(t, 0.0, 1.0)
-                proj = A + t * edge
+                t = dot / len2
+                t = max(0.0, min(1.0, t))
+                cx = A[0] + t * dx
+                cy = A[1] + t * dy
 
-                diff = p.pos - proj
-                dist = np.linalg.norm(diff)
+                # Distance
+                d_x = p[0] - cx
+                d_y = p[1] - cy
+                dist = np.hypot(d_x, d_y)
 
-                if dist < self.thickness:
-                    # Push outward only (simple, stable)
-                    corr = (self.thickness - dist) * 0.3
-                    normal = diff / (dist + 1e-12)
-                    p.pos += corr * normal
+                if dist < self.thick:
+                    # Push out
+                    scale = (self.thick - dist) * 0.4 / (dist + 1e-8)
+                    particles[vid].pos[0] += d_x * scale
+                    particles[vid].pos[1] += d_y * scale
+                    corr = abs(self.thick - dist)
                     if corr > max_corr:
                         max_corr = corr
 

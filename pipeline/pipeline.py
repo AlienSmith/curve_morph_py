@@ -6,7 +6,7 @@ from .mesh_builder import MeshBuilder
 from .fourier_morpher import FourierShapeMorpher
 
 
-def generate_morph(pts_A: np.ndarray, pts_B: np.ndarray, num_frames: int = 1) -> Tuple[np.ndarray, np.ndarray]:
+def generate_morph(pts_A: np.ndarray, pts_B: np.ndarray, num_frames: int = 60) -> Tuple[np.ndarray, np.ndarray]:
     morpher = FourierShapeMorpher(pts_A, pts_B)
     builder = MeshBuilder(pts_A, min_angle=30.0)
     particles = [Particle(pos) for pos in builder.verts]
@@ -26,17 +26,14 @@ def generate_morph(pts_A: np.ndarray, pts_B: np.ndarray, num_frames: int = 1) ->
         area_constraints.append(TriangleAreaConstraint(
             tri[0], tri[1], tri[2], rest_area, stiffness=0.8))
 
-    collision_c = SelfCollisionConstraint(
-        builder.boundary_idx.tolist(), thickness=0.03)
+    # collision_c = SelfCollisionConstraint(
+    #     builder.boundary_idx.tolist(), thickness=0.03)
 
     # Solver created ONCE
     solver = PBDSolver(particles, [], dt=1.0, damping=0.98)
 
-    # Fixed constraints
-    fixed_constraints = static_constraints + area_constraints + [collision_c]
-
     frames = []
-    for t in np.linspace(0, 1, 2):
+    for t in np.linspace(0, 1, num_frames):
         print(f"t = {t:.2f}")
         target = morpher.evaluate(t)
 
@@ -58,8 +55,15 @@ def generate_morph(pts_A: np.ndarray, pts_B: np.ndarray, num_frames: int = 1) ->
             TimeLogConstraint("END_AREA"),
 
             TimeLogConstraint("START_COLLISION"),
-            collision_c,
+            # collision_c,
             TimeLogConstraint("END_COLLISION"),
+        ]
+
+        solver.constraints = [
+            fourier_c,
+            *static_constraints,
+            *area_constraints,
+            # collision_c,
         ]
 
         # 200 iterations is way too many — we lower later, for now keep
