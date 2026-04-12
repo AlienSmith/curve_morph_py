@@ -24,7 +24,7 @@ def generate_morph(pts_A: np.ndarray, pts_B: np.ndarray, num_frames: int = 60) -
         d31 = pts[2] - pts[0]
         rest_area = 0.5 * (d21[0]*d31[1] - d21[1]*d31[0])
         area_constraints.append(TriangleAreaConstraint(
-            tri[0], tri[1], tri[2], rest_area, stiffness=0.8))
+            tri[0], tri[1], tri[2], rest_area, stiffness=0.99))
 
     # collision_c = SelfCollisionConstraint(
     #     builder.boundary_idx.tolist(), thickness=0.03)
@@ -39,7 +39,7 @@ def generate_morph(pts_A: np.ndarray, pts_B: np.ndarray, num_frames: int = 60) -
 
         # Only change the boundary constraint
         fourier_c = FourierBoundaryConstraint(
-            builder.boundary_idx.tolist(), target, alpha=0.12
+            builder.boundary_idx.tolist(), target, alpha=0.82
         )
         solver.constraints = [
             TimeLogConstraint("START"),
