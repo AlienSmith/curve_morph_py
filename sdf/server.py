@@ -15,9 +15,10 @@ from fastapi.responses import FileResponse
 from loader import upgrade_to_uniform_resolution
 from utils import evaluate_bezier_curve
 from morph import generate_morph_sequence
+from loader import process_shape_data
 
 TARGET_SEGMENTS = 64
-NUM_FRAMES = 61
+NUM_FRAMES = 60
 # Force headless mode for the server
 matplotlib.use('Agg')
 
@@ -28,39 +29,6 @@ BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 TEMP_DIR = os.path.join(BASE_DIR, "temp_renders")
 os.makedirs(TEMP_DIR, exist_ok=True)
-
-# --- HELPER LOGIC ---
-
-
-def process_shape_data(content, target_segments=64):
-    """
-    Extracts points from JSON (raw or manifest), upgrades resolution,
-    and enforces CCW winding for FFT stability.
-    """
-    # Extract points from Manifest {"meta":..., "points":...} or Raw Array [[x,y],...]
-    if isinstance(content, dict) and "points" in content:
-        editor_pts = np.array(content["points"], dtype=np.float32)
-    else:
-        editor_pts = np.array(content, dtype=np.float32)
-
-    if editor_pts.shape != (32, 2):
-        raise ValueError(f"Expected (32, 2) array, got {editor_pts.shape}")
-
-    # 1. Upgrade resolution to uniform arc-length anchors
-    pts = upgrade_to_uniform_resolution(editor_pts, target_segments)
-
-    # 2. Enforce CCW Winding (Shoelace formula)
-    x, y = pts[:, 0], pts[:, 1]
-    area = 0.5 * (np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]
-                         ) + (x[-1] * y[0] - x[0] * y[-1]))
-
-    if area < 0:
-        # Flip to CCW and roll by 1 to keep [Anchor, Control] alignment
-        pts = pts[::-1]
-        pts = np.roll(pts, 1, axis=0)
-        print("🔄 Fixed Winding: Flipped CW to CCW for FFT.")
-
-    return pts
 
 # --- API ENDPOINTS ---
 
@@ -82,7 +50,7 @@ async def generate_morph(
         ptsB = process_shape_data(json_b, TARGET_SEGMENTS)
         print("⚙️ Generating morph sequence...")
         morph_sequence = generate_morph_sequence(
-            ptsA, ptsB, TARGET_SEGMENTS, num_frames=NUM_FRAMES)
+            ptsA, ptsB, TARGET_SEGMENTS, NUM_FRAMES)
         print(f"✅ Output shape: {morph_sequence.shape}")
     except Exception as e:
         return {"error": f"Processing failed: {str(e)}"}
@@ -116,7 +84,8 @@ async def generate_morph(
         title_txt.set_text(
             f"Frame {f}/{NUM_FRAMES-1} | α = {f/(NUM_FRAMES-1):.2f}")
         return curve_line, anchor_dots, title_txt
-    anim = FuncAnimation(fig, update, frames=41, blit=True)
+    anim = FuncAnimation(fig, update, frames=NUM_FRAMES,
+                         blit=True, interval=500)
 
     # Using 'optimize=True' can help with file size but takes a bit more CPU
     anim.save(gif_path, writer='pillow', fps=20)

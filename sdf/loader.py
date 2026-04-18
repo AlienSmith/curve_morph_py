@@ -88,21 +88,27 @@ def load_and_upgrade(json_path: str, target_segments: int) -> np.ndarray:
     with open(json_path, 'r') as f:
         content = json.load(f)
 
+    return process_shape_data(content, target_segments)
+
+
+def process_shape_data(content, target_segments=64):
+    """
+    Extracts points from JSON (raw or manifest), upgrades resolution,
+    and enforces CCW winding for FFT stability.
+    """
+    # Extract points from Manifest {"meta":..., "points":...} or Raw Array [[x,y],...]
     if isinstance(content, dict) and "points" in content:
         editor_pts = np.array(content["points"], dtype=np.float32)
     else:
         editor_pts = np.array(content, dtype=np.float32)
-
-    assert editor_pts.shape[1] == 2, f"Expected (N, 2), got {editor_pts.shape}"
-
     pts = upgrade_to_uniform_resolution(editor_pts, target_segments)
     pts = enforce_ccw_winding(pts)
     return pts
 
-
 # ==========================================================
 # TEST & VISUALIZATION
 # ==========================================================
+
 
 def generate_test_control_points(n_segments: int = 8) -> np.ndarray:
     """Generate a simple circle-like quad Bézier chain for testing."""
