@@ -208,7 +208,6 @@ __marimo__/
 
 # Logs
 logs
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -233,3 +232,4 @@ dist-ssr
 /temp_renders/*
 /shape-studio/public/*
 *.gif
+/morph_output.json
