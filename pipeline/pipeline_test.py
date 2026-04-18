@@ -125,10 +125,10 @@ def load_and_upgrade_v1(json_path, target_segments=64):
 def run_morph_test_hard():
     TARGET_SEGMENTS = 128
     print("🔹 Loading shapes...")
-    A = load_and_upgrade_v1("/workspace/C_shape.json", TARGET_SEGMENTS)
-    B = load_and_upgrade_v1("/workspace/circle.json", TARGET_SEGMENTS)
-    # A = make_shape(0.0, 0.0, 1.0, 0.6)
-    # B = make_shape(0.2, 0.1, 0.8, 0.8, phase=np.pi/4)
+    # A = load_and_upgrade_v1("/workspace/C_shape.json", TARGET_SEGMENTS)
+    # B = load_and_upgrade_v1("/workspace/circle.json", TARGET_SEGMENTS)
+    A = make_shape(0.0, 0.0, 1.0, 0.6)
+    B = make_shape(0.2, 0.1, 0.8, 0.8, phase=np.pi/4)
 
     print("🔹 Running PBD (Distance + Fourier only)...")
     frames, boundary_idx = generate_morph(A, B, num_frames=61)
