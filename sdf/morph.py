@@ -103,7 +103,8 @@ def generate_morph_sequence(
         t_key = round(float(t), 8)
         if t_key not in contour_cache:
             bias = _get_adaptive_bias(t, bbox_diag)
-            sdf = renderer.render(t) + bias  # ✅ Bias prevents topology splits
+            # ✅ Bias prevents topology splits
+            sdf = renderer.render(t, bias)
             sdf_cache[t_key] = sdf
             contour_cache[t_key] = ContourSampler(
                 sdf, metadata).sample_boundary(min(n_pts, 96))
@@ -163,7 +164,7 @@ def generate_morph_sequence(
             sdf = sdf_cache[alpha_key]
         else:
             bias = _get_adaptive_bias(alpha, bbox_diag)
-            sdf = renderer.render(alpha) + bias  # ✅ Bias applied here too
+            sdf = renderer.render(alpha, bias)  # ✅ Bias applied here too
 
         canonical_pts = ContourSampler(sdf, metadata).sample_boundary(n_pts)
         world_pts = aligner.to_world(alpha, canonical_pts)

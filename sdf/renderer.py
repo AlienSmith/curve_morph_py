@@ -1,6 +1,6 @@
 # sdf_renderer.py
 import numpy as np
-from scipy.ndimage import distance_transform_edt, gaussian_filter
+from scipy.ndimage import distance_transform_edt
 from skimage.draw import polygon
 
 
@@ -16,8 +16,6 @@ class SDFRenderer:
         all_pts = np.vstack([self.curve_a, self.curve_b])
         x_min, y_min = all_pts.min(axis=0)
         x_max, y_max = all_pts.max(axis=0)
-        cx, cy = 0.5 * (x_min + x_max), 0.5 * \
-            (y_min + y_min)  # typo fix: should be y_max
         cx, cy = 0.5 * (x_min + x_max), 0.5 * (y_min + y_max)
 
         half_w = 0.5 * (x_max - x_min)
@@ -57,11 +55,14 @@ class SDFRenderer:
         dist_in = distance_transform_edt(mask > 0)
         return (dist_out - dist_in) * self.pixel_scale
 
-    def render(self, alpha: float, blur_sigma: float = 0.0) -> np.ndarray:
+    def render(self, alpha: float, bias: float = 0.0) -> np.ndarray:
+        """
+        Generate the interpolated SDF for a given morph parameter.
+        bias > 0 uniformly lifts the field to prevent narrow necks from crossing zero.
+        """
         sdf = (1.0 - alpha) * self.sdf_a + alpha * self.sdf_b
-        if blur_sigma > 0.1:
-            # mode='nearest' prevents edge artifacts during blur
-            sdf = gaussian_filter(sdf, sigma=blur_sigma, mode='nearest')
+        if bias != 0.0:
+            sdf += bias
         return sdf
 
     def get_grid_metadata(self) -> dict:
