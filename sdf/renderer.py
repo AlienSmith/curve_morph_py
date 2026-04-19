@@ -1,6 +1,6 @@
 # sdf_renderer.py
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, uniform_filter, gaussian_filter
 from skimage.draw import polygon
 
 
@@ -26,7 +26,7 @@ class SDFRenderer:
         self.y_min, self.y_max = cy - half_dim, cy + half_dim
         self.pixel_scale = (self.x_max - self.x_min) / self.grid_size
 
-        # ✅ PRECOMPUTE SDFs (massive speedup, run once)
+        # ✅ PRECOMPUTE SDFs
         self.sdf_a = self._compute_signed_sdf(self._rasterize(self.curve_a))
         self.sdf_b = self._compute_signed_sdf(self._rasterize(self.curve_b))
 
@@ -57,12 +57,33 @@ class SDFRenderer:
 
     def render(self, alpha: float, bias: float = 0.0) -> np.ndarray:
         """
-        Generate the interpolated SDF for a given morph parameter.
-        bias > 0 uniformly lifts the field to prevent narrow necks from crossing zero.
+        Interpolated SDF with pinch-targeted topology stabilization.
+        Only biases regions where |SDF| is small AND local variance is low (flat bottleneck).
+        Leaves corners, steep slopes, and deep interiors untouched.
         """
         sdf = (1.0 - alpha) * self.sdf_a + alpha * self.sdf_b
-        if bias != 0.0:
-            sdf += bias
+
+        if bias > 1e-6:
+            # 1. Restrict to narrow band around zero-crossing
+            near_zero = np.abs(sdf) < 2.0  # world units
+
+            # 2. Compute local variance in a sliding window (gradient-free)
+            # var(X) = E[X²] - E[X]²
+            win_size = 9  # ~9-pixel window, covers typical pinch width
+            mean_sdf = uniform_filter(sdf, size=win_size)
+            mean_sdf2 = uniform_filter(sdf**2, size=win_size)
+            variance = np.maximum(mean_sdf2 - mean_sdf**2, 0.0)
+
+            # 3. Soft pinch mask: high where variance is low, zero elsewhere
+            # 0.3 is the "flatness threshold" (tune if needed)
+            pinch_mask = np.exp(-variance / 0.3) * near_zero
+
+            # 4. Smooth mask edges to avoid blocky artifacts
+            pinch_mask = gaussian_filter(pinch_mask, sigma=1.5)
+
+            # 5. Apply localized bias
+            sdf += bias * pinch_mask
+
         return sdf
 
     def get_grid_metadata(self) -> dict:

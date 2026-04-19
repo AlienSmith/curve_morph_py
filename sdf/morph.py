@@ -34,7 +34,6 @@ def _align_phase_and_compute_error(c_a: np.ndarray, c_b: np.ndarray, c_mid: np.n
     N = len(c_a)
     c_lin = (c_a + c_b) / 2.0
 
-    # Brute-force optimal circular shift (N=96 is cheap: ~9k ops)
     best_mse = np.inf
     best_shifted_mid = c_mid
     for shift in range(N):
@@ -46,7 +45,6 @@ def _align_phase_and_compute_error(c_a: np.ndarray, c_b: np.ndarray, c_mid: np.n
 
     pos_err = np.sqrt(best_mse)
 
-    # Curvature error on aligned contour
     k_a = _compute_contour_curvature(c_a)
     k_b = _compute_contour_curvature(c_b)
     k_mid = _compute_contour_curvature(best_shifted_mid)
@@ -59,11 +57,13 @@ def _align_phase_and_compute_error(c_a: np.ndarray, c_b: np.ndarray, c_mid: np.n
 def _get_adaptive_bias(t: float, bbox_diag: float) -> float:
     """
     Smoothly lifts narrow necks above SDF=0 to prevent topology splits.
-    Bias is 0 at endpoints, peaks in middle. Scaled to ~2% of shape extent.
+    Strictly 0.0 at t=0 and t=1 to guarantee exact endpoint shapes.
     """
+    if t == 0.0 or t == 1.0:
+        return 0.0
     if t <= 0.001 or t >= 0.999:
         return 0.0
-    # Tune 0.02 up/down if holes still appear or shape looks too puffy
+    # Scales to ~2% of shape extent; peaks at t=0.5
     return 0.02 * bbox_diag * np.sin(np.pi * t)
 
 
@@ -71,15 +71,14 @@ def generate_morph_sequence(
     pts_a: np.ndarray,
     pts_b: np.ndarray,
     target_segments: int,
-    error_threshold: float = 0.0015,  # ~1.5% of shape extent (robust default)
-    min_t_step: float = 0.008,       # Prevents infinite loops in narrow zones
-    max_frames: int = 200,            # Hard cap on output frames
+    error_threshold: float = 0.0015,
+    min_t_step: float = 0.008,
+    max_frames: int = 200,
     verbose: bool = True
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Adaptive morph sequence generator.
-    Subdivides t-intervals where boundary shape/curvature changes abruptly.
-    Uses phase-invariant error metric to avoid false positives from sampling shifts.
+    Adaptive morph sequence generator with topology-stable SDF blending.
+    Guarantees exact start/end shapes (zero bias at endpoints).
     """
     aligner = OBBAligner(pts_a, pts_b)
     A_can = aligner.to_canonical(pts_a, 'a')
@@ -90,7 +89,7 @@ def generate_morph_sequence(
     bbox_diag = float(np.linalg.norm(
         all_can_pts.max(axis=0) - all_can_pts.min(axis=0)))
     if bbox_diag < 1e-6:
-        bbox_diag = 1.0  # Safe fallback
+        bbox_diag = 1.0
 
     renderer = SDFRenderer(A_can, B_can, grid_size=512, padding_ratio=0.15)
     metadata = renderer.get_grid_metadata()
@@ -103,8 +102,7 @@ def generate_morph_sequence(
         t_key = round(float(t), 8)
         if t_key not in contour_cache:
             bias = _get_adaptive_bias(t, bbox_diag)
-            # ✅ Bias prevents topology splits
-            sdf = renderer.render(t, bias)
+            sdf = renderer.render(t, bias=bias)
             sdf_cache[t_key] = sdf
             contour_cache[t_key] = ContourSampler(
                 sdf, metadata).sample_boundary(min(n_pts, 96))
@@ -129,10 +127,8 @@ def generate_morph_sequence(
             c_b = contour_cache[round(t_b, 8)]
             c_mid = get_contour(t_mid)
 
-            # Phase-aligned error computation
             pos_err, k_err = _align_phase_and_compute_error(c_a, c_b, c_mid)
 
-            # Normalized error (unitless)
             bbox_diag_local = np.linalg.norm(c_a.max(axis=0) - c_a.min(axis=0))
             scale = max(bbox_diag_local, 1e-6)
             err_norm = (0.7 * pos_err + 0.3 * k_err) / scale
@@ -145,11 +141,9 @@ def generate_morph_sequence(
             print(
                 f"  Frames: {len(t_vals):2d} | worst_err={worst_err:.4f} | threshold={error_threshold}")
 
-        # Convergence check
         if worst_idx == -1 or worst_err <= error_threshold:
             break
 
-        # Subdivide worst interval
         t_a, t_b = t_vals[worst_idx], t_vals[worst_idx + 1]
         t_mid = float((t_a + t_b) / 2.0)
         t_vals.insert(worst_idx + 1, t_mid)
@@ -160,11 +154,18 @@ def generate_morph_sequence(
 
     for i, alpha in enumerate(t_vals):
         alpha_key = round(float(alpha), 8)
-        if alpha_key in sdf_cache:
-            sdf = sdf_cache[alpha_key]
+
+        # ✅ GUARANTEE EXACT ENDPOINTS: bypass bias entirely at t=0,1
+        if alpha_key == 0.0:
+            sdf = renderer.sdf_a
+        elif alpha_key == 1.0:
+            sdf = renderer.sdf_b
         else:
-            bias = _get_adaptive_bias(alpha, bbox_diag)
-            sdf = renderer.render(alpha, bias)  # ✅ Bias applied here too
+            if alpha_key in sdf_cache:
+                sdf = sdf_cache[alpha_key]
+            else:
+                bias = _get_adaptive_bias(alpha, bbox_diag)
+                sdf = renderer.render(alpha, bias=bias)
 
         canonical_pts = ContourSampler(sdf, metadata).sample_boundary(n_pts)
         world_pts = aligner.to_world(alpha, canonical_pts)
@@ -191,7 +192,6 @@ if __name__ == "__main__":
     print(
         f"✅ Output shape: {morph_sequence.shape} | Frames generated: {num_frames}")
 
-    # 💾 Save JSON
     with open(JSON_PATH, 'w') as f:
         json.dump({
             "points": morph_sequence.tolist(),
@@ -204,7 +204,6 @@ if __name__ == "__main__":
         }, f, indent=2)
     print(f"💾 Saved JSON to {JSON_PATH}")
 
-    # 🎬 Setup Figure
     fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
     ax.set_aspect('equal')
     ax.axis('off')
@@ -230,8 +229,8 @@ if __name__ == "__main__":
 
     print("🎬 Rendering GIF...")
     anim = FuncAnimation(fig, update, frames=num_frames,
-                         blit=False, interval=1000.33)
-    anim.save(GIF_PATH, fps=10, writer='pillow')
+                         blit=False, interval=100)
+    anim.save(GIF_PATH, fps=5, writer='pillow')
     print(f"✅ Saved GIF to {GIF_PATH}")
 
     plt.close(fig)
