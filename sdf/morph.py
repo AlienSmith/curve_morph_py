@@ -56,6 +56,17 @@ def _align_phase_and_compute_error(c_a: np.ndarray, c_b: np.ndarray, c_mid: np.n
     return pos_err, k_err
 
 
+def _get_adaptive_bias(t: float, bbox_diag: float) -> float:
+    """
+    Smoothly lifts narrow necks above SDF=0 to prevent topology splits.
+    Bias is 0 at endpoints, peaks in middle. Scaled to ~2% of shape extent.
+    """
+    if t <= 0.001 or t >= 0.999:
+        return 0.0
+    # Tune 0.02 up/down if holes still appear or shape looks too puffy
+    return 0.02 * bbox_diag * np.sin(np.pi * t)
+
+
 def generate_morph_sequence(
     pts_a: np.ndarray,
     pts_b: np.ndarray,
@@ -74,6 +85,13 @@ def generate_morph_sequence(
     A_can = aligner.to_canonical(pts_a, 'a')
     B_can = aligner.to_canonical(pts_b, 'b')
 
+    # ✅ Compute bbox_diag BEFORE get_contour is defined/called
+    all_can_pts = np.vstack([A_can, B_can])
+    bbox_diag = float(np.linalg.norm(
+        all_can_pts.max(axis=0) - all_can_pts.min(axis=0)))
+    if bbox_diag < 1e-6:
+        bbox_diag = 1.0  # Safe fallback
+
     renderer = SDFRenderer(A_can, B_can, grid_size=512, padding_ratio=0.15)
     metadata = renderer.get_grid_metadata()
     n_pts = target_segments * 2
@@ -84,7 +102,8 @@ def generate_morph_sequence(
     def get_contour(t: float) -> np.ndarray:
         t_key = round(float(t), 8)
         if t_key not in contour_cache:
-            sdf = renderer.render(t)
+            bias = _get_adaptive_bias(t, bbox_diag)
+            sdf = renderer.render(t) + bias  # ✅ Bias prevents topology splits
             sdf_cache[t_key] = sdf
             contour_cache[t_key] = ContourSampler(
                 sdf, metadata).sample_boundary(min(n_pts, 96))
@@ -92,6 +111,7 @@ def generate_morph_sequence(
 
     get_contour(0.0)
     get_contour(1.0)
+
     t_vals = [0.0, 1.0]
 
     while len(t_vals) < max_frames:
@@ -112,8 +132,8 @@ def generate_morph_sequence(
             pos_err, k_err = _align_phase_and_compute_error(c_a, c_b, c_mid)
 
             # Normalized error (unitless)
-            bbox_diag = np.linalg.norm(c_a.max(axis=0) - c_a.min(axis=0))
-            scale = max(bbox_diag, 1e-6)
+            bbox_diag_local = np.linalg.norm(c_a.max(axis=0) - c_a.min(axis=0))
+            scale = max(bbox_diag_local, 1e-6)
             err_norm = (0.7 * pos_err + 0.3 * k_err) / scale
 
             if err_norm > worst_err:
@@ -142,7 +162,8 @@ def generate_morph_sequence(
         if alpha_key in sdf_cache:
             sdf = sdf_cache[alpha_key]
         else:
-            sdf = renderer.render(alpha)
+            bias = _get_adaptive_bias(alpha, bbox_diag)
+            sdf = renderer.render(alpha) + bias  # ✅ Bias applied here too
 
         canonical_pts = ContourSampler(sdf, metadata).sample_boundary(n_pts)
         world_pts = aligner.to_world(alpha, canonical_pts)
