@@ -1,31 +1,55 @@
 <script>
     import { Row, Col, Button, Input, Label } from "sveltestrap";
     import { Zap, Download, FileCode } from "lucide-svelte";
-    import { morphResult, status, renderDpi } from "../stores/previewStore.js";
+    import {
+        morphResult,
+        morphBinary,
+        status,
+        renderDpi,
+    } from "../stores/previewStore.js";
 
     let fileA, fileB;
 
     async function runFFTMorph() {
         if (!fileA || !fileB) return alert("Select two JSON files!");
-        status.set("⚡ FFT Processing...");
+        status.set("⚡ Processing morph...");
 
         const fd = new FormData();
         fd.append("fileA", fileA);
         fd.append("fileB", fileB);
         fd.append("dpi", $renderDpi);
+        fd.append("include_morph", "true"); // Explicitly request .morph file
 
         try {
             const resp = await fetch("/api/generate-morph", {
                 method: "POST",
                 body: fd,
             });
-            const blob = await resp.blob();
-            morphResult.set(URL.createObjectURL(blob));
-            status.set("✅ Ready");
+
+            // Parse multipart response to get both files
+            const formData = await resp.formData();
+
+            // Get GIF preview
+            const gifBlob = formData.get("gif");
+            morphResult.set(URL.createObjectURL(gifBlob));
+
+            // Get .morph binary
+            const morphBlob = formData.get("morph");
+            morphBinary.set(URL.createObjectURL(morphBlob));
+
+            status.set("✅ Morph generated!");
         } catch (e) {
-            status.set("❌ Error");
+            console.error("Morph error:", e);
+            status.set("❌ Processing failed");
         }
     }
+
+    // Clean up blob URLs when component unmounts to avoid memory leaks
+    function cleanupBlobs() {
+        if ($morphResult) URL.revokeObjectURL($morphResult);
+        if ($morphBinary) URL.revokeObjectURL($morphBinary);
+    }
+    window.addEventListener("beforeunload", cleanupBlobs);
 </script>
 
 <Row class="g-0 h-100">
@@ -70,10 +94,10 @@
             <div class="text-center">
                 <img
                     src={$morphResult}
-                    alt="Result"
+                    alt="Morph preview"
                     class="img-fluid rounded shadow-lg border border-secondary"
                 />
-                <div class="mt-3">
+                <div class="mt-3 gap-2 d-flex justify-content-center">
                     <Button
                         color="success"
                         size="sm"
@@ -81,6 +105,16 @@
                         download="morph.gif"
                     >
                         <Download size={14} class="me-1" /> Download .gif
+                    </Button>
+                    <!-- New .morph download button -->
+                    <Button
+                        color="info"
+                        size="sm"
+                        href={$morphBinary}
+                        download="animation.morph"
+                        disabled={!$morphBinary}
+                    >
+                        <Download size={14} class="me-1" /> Download .morph
                     </Button>
                 </div>
             </div>
